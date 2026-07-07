@@ -3,7 +3,17 @@ use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use std::time::Duration;
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
 use tauri::{Manager, RunEvent, Url};
+
+// Windows CREATE_NO_WINDOW: node.exe is a console-subsystem binary, so spawning
+// it without this flag flashes a visible console window. Closing that window
+// (it looks like leftover debug output) kills the child process along with
+// it, taking the whole app down with a confusing "Failed to fetch".
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 // Fixed local port for the bundled Next.js server. This is a packaged,
 // single-user desktop app, so a fixed port is fine for v1.
@@ -121,16 +131,18 @@ pub fn run() {
                         .map(|p| p.to_path_buf())
                         .unwrap_or_else(|| std::env::current_dir().unwrap());
 
-                    let child = Command::new(&node_bin)
-                        .arg(&server_js)
+                    let mut cmd = Command::new(&node_bin);
+                    cmd.arg(&server_js)
                         .current_dir(&cwd)
                         .env("PORT", APP_PORT.to_string())
                         .env("HOSTNAME", "127.0.0.1")
                         .env("NODE_ENV", "production")
                         .env("GREENLIGHT_DATA_DIR", &data_dir)
                         .stdout(Stdio::null())
-                        .stderr(Stdio::null())
-                        .spawn();
+                        .stderr(Stdio::null());
+                    #[cfg(windows)]
+                    cmd.creation_flags(CREATE_NO_WINDOW);
+                    let child = cmd.spawn();
 
                     match child {
                         Ok(child) => {

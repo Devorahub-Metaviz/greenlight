@@ -9,8 +9,21 @@
     display: flex; align-items: center; justify-content: center;
     background: #0b0b0d; color: #e6e6e6;
     font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+    overflow: hidden; position: relative;
   }
-  .wrap { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+  /* Soft drifting green cloud/smoke ambience behind the mark. */
+  .cloud {
+    position: absolute; border-radius: 50%; filter: blur(60px);
+    background: radial-gradient(circle, rgba(34,197,94,0.35), transparent 70%);
+    pointer-events: none;
+  }
+  .cloud.c1 { width: 420px; height: 420px; top: -120px; left: -100px; animation: drift1 16s ease-in-out infinite; }
+  .cloud.c2 { width: 360px; height: 360px; bottom: -140px; right: -80px; animation: drift2 20s ease-in-out infinite; }
+  .cloud.c3 { width: 300px; height: 300px; top: 40%; left: 60%; animation: drift3 24s ease-in-out infinite; background: radial-gradient(circle, rgba(21,128,61,0.30), transparent 70%); }
+  @keyframes drift1 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(60px,40px) scale(1.15); } }
+  @keyframes drift2 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(-50px,-30px) scale(1.1); } }
+  @keyframes drift3 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(-40px,50px) scale(0.9); } }
+  .wrap { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; gap: 14px; }
   .mark {
     width: 56px; height: 56px; border-radius: 16px;
     background: linear-gradient(135deg, #22c55e, #15803d);
@@ -33,6 +46,9 @@
 </style>
 </head>
 <body>
+  <div class="cloud c1"></div>
+  <div class="cloud c2"></div>
+  <div class="cloud c3"></div>
   <div class="wrap">
     <div class="mark">
       <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
