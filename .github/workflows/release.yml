@@ -56,12 +56,9 @@ jobs:
           - platform: windows-latest
             args: ""
             rust_target: ""
-          - platform: macos-latest
-            args: "--target aarch64-apple-darwin"
-            rust_target: "aarch64-apple-darwin"
-          - platform: macos-13
-            args: "--target x86_64-apple-darwin"
-            rust_target: "x86_64-apple-darwin"
+          # macOS builds are disabled for now (no Apple signing set up yet).
+          # Re-add a macos-latest (aarch64-apple-darwin) / macos-13
+          # (x86_64-apple-darwin) matrix leg when ready to ship Mac builds.
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
