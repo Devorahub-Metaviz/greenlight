@@ -22,6 +22,22 @@ import { DocsTab } from "@/components/e2e/DocsTab";
 import { AnalyticsTab } from "@/components/e2e/AnalyticsTab";
 import { cn } from "@/lib/utils";
 
+function inTauri(): boolean {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
+// Native folder picker inside the desktop app; no-op (returns null) on the web.
+async function browseFolder(): Promise<string | null> {
+  if (!inTauri()) return null;
+  try {
+    const { open } = await import("@tauri-apps/plugin-dialog");
+    const selected = await open({ directory: true, multiple: false });
+    return typeof selected === "string" ? selected : null;
+  } catch {
+    return null;
+  }
+}
+
 type Tab = "tests" | "checklist" | "analytics" | "history" | "docs";
 const TABS: { key: Tab; label: string; Icon: typeof FlaskConical }[] = [
   { key: "tests", label: "Tests", Icon: FlaskConical },
@@ -298,14 +314,20 @@ export default function Home() {
             </div>
           </div>
           <p className="mt-5 text-sm text-muted-foreground">Choose the folder that holds your projects. Any subfolder with an <span className="font-mono text-foreground">e2e/</span> directory becomes a project.</p>
-          <input
-            value={rootInput}
-            onChange={(e) => setRootInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && saveRoot()}
-            placeholder="D:\path\to\projects"
-            autoFocus
-            className="mt-4 h-10 w-full rounded-lg border border-border bg-background px-3 font-mono text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-ring/30"
-          />
+          <div className="mt-4 flex gap-2">
+            <input
+              value={rootInput}
+              onChange={(e) => setRootInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && saveRoot()}
+              placeholder="D:\path\to\projects"
+              autoFocus
+              className="h-10 flex-1 rounded-lg border border-border bg-background px-3 font-mono text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-ring/30"
+            />
+            {inTauri() && (
+              <button onClick={async () => { const p = await browseFolder(); if (p) setRootInput(p); }}
+                className="h-10 shrink-0 rounded-lg border border-border bg-surface px-3 text-sm font-medium text-foreground transition hover:border-primary/50">Browse…</button>
+            )}
+          </div>
           {rootError && <div className="mt-2 text-sm text-destructive">{rootError}</div>}
           <button onClick={saveRoot} className="mt-4 inline-flex h-10 w-full items-center justify-center rounded-lg bg-gradient-primary text-sm font-semibold text-white shadow-elevated transition hover:opacity-95">Load projects</button>
         </div>
@@ -479,8 +501,14 @@ function ChangeRootModal({ initial, onClose, onSave }: { initial: string; onClos
           <button onClick={onClose} className="ml-auto flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
         </div>
         <p className="mb-3 text-xs text-muted-foreground">Folder that holds your projects. Any subfolder with an <span className="font-mono">e2e/</span> directory becomes a project.</p>
-        <input value={path} onChange={(e) => setPath(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submit()} placeholder="D:\path\to\projects" autoFocus
-          className="h-10 w-full rounded-lg border border-border bg-background px-3 font-mono text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-ring/30" />
+        <div className="flex gap-2">
+          <input value={path} onChange={(e) => setPath(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submit()} placeholder="D:\path\to\projects" autoFocus
+            className="h-10 flex-1 rounded-lg border border-border bg-background px-3 font-mono text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-ring/30" />
+          {inTauri() && (
+            <button onClick={async () => { const p = await browseFolder(); if (p) setPath(p); }}
+              className="h-10 shrink-0 rounded-lg border border-border bg-surface px-3 text-sm font-medium text-foreground transition hover:border-primary/50">Browse…</button>
+          )}
+        </div>
         {error && <div className="mt-2 text-sm text-destructive">{error}</div>}
         <div className="mt-4 flex justify-end gap-2">
           <button onClick={onClose} className="inline-flex h-9 items-center rounded-lg border border-border bg-surface px-3 text-sm font-medium hover:border-primary/50">Cancel</button>

@@ -11,16 +11,56 @@ const APP_PORT: u16 = 47932;
 
 struct ServerProcess(Mutex<Option<Child>>);
 
+// Candidate roots for our bundled resources, tried in order. resource_dir()
+// is the documented API, but Windows NSIS installs were observed to place
+// `app/` and `binaries/` directly next to the exe (no `resources/` wrapper),
+// so the exe's own directory is checked too and whichever actually has the
+// files wins. Kept resilient rather than betting on one exact convention.
+fn candidate_roots(app: &tauri::AppHandle) -> Vec<std::path::PathBuf> {
+    let mut roots = Vec::new();
+    if let Ok(r) = app.path().resource_dir() {
+        roots.push(r);
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            roots.push(dir.to_path_buf());
+        }
+    }
+    roots
+}
+
+fn find_existing(app: &tauri::AppHandle, rel: &[&str]) -> Option<std::path::PathBuf> {
+    for root in candidate_roots(app) {
+        let mut p = root;
+        for seg in rel {
+            p = p.join(seg);
+        }
+        if p.exists() {
+            return Some(p);
+        }
+    }
+    None
+}
+
 fn node_binary_path(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
-    let resource_dir = app.path().resource_dir().ok()?;
     // Staged by CI as "binaries/node" (no extension) on every platform - Windows
     // can still execute it via an explicit full path without a .exe suffix.
-    Some(resource_dir.join("binaries").join("node"))
+    find_existing(app, &["binaries", "node"])
 }
 
 fn server_entry_path(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
-    let resource_dir = app.path().resource_dir().ok()?;
-    Some(resource_dir.join("app").join("server.js"))
+    find_existing(app, &["app", "server.js"])
+}
+
+// Injects a visible failure message into the still-showing splash page,
+// instead of leaving it spinning forever with no feedback.
+fn show_startup_error(app: &tauri::AppHandle, message: &str) {
+    if let Some(window) = app.get_webview_window("main") {
+        let escaped = message.replace('\\', "\\\\").replace('"', "\\\"");
+        let _ = window.eval(&format!(
+            "window.__greenlightStartupFailed && window.__greenlightStartupFailed(\"{escaped}\")"
+        ));
+    }
 }
 
 fn wait_for_port(port: u16, timeout: Duration) -> bool {
@@ -39,6 +79,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(ServerProcess(Mutex::new(None)))
         .setup(|app| {
             if cfg!(debug_assertions) {
@@ -91,16 +132,26 @@ pub fn run() {
                                     }
                                 } else {
                                     log::error!("Greenlight server did not become ready in time");
+                                    show_startup_error(&nav_handle, "The background server didn't respond in time.");
                                 }
                             });
                         }
-                        Err(e) => log::error!("failed to spawn Greenlight server: {e}"),
+                        Err(e) => {
+                            log::error!("failed to spawn Greenlight server: {e}");
+                            show_startup_error(&app_handle, &format!("Couldn't launch the server process: {e}"));
+                        }
                     }
                 }
                 _ => {
                     // Dev mode (`tauri dev`): devUrl already points at `next dev`,
-                    // no bundled sidecar to spawn.
-                    log::info!("no bundled server resources found; assuming dev mode");
+                    // no bundled sidecar to spawn. In a real build, missing
+                    // resources means something staged wrong - surface it
+                    // instead of leaving the splash spinning forever.
+                    if cfg!(debug_assertions) {
+                        log::info!("no bundled server resources found; assuming dev mode");
+                    } else {
+                        show_startup_error(&app_handle, "Bundled app resources are missing from this install.");
+                    }
                 }
             }
 
