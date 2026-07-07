@@ -1,0 +1,142 @@
+{
+  "project": "demo-app",
+  "checklist": [
+    {
+      "id": "checkout-3",
+      "title": "Tax is calculated on the order",
+      "module": "checkout",
+      "tests": [
+        "e2e/checkout/checkout-3.spec.ts"
+      ],
+      "priority": "low",
+      "status": "open"
+    },
+    {
+      "id": "checkout-1",
+      "title": "Checkout total is calculated correctly",
+      "module": "checkout",
+      "tests": [
+        "e2e/checkout/checkout-1.spec.ts"
+      ],
+      "priority": "high",
+      "status": "open"
+    },
+    {
+      "id": "checkout-2",
+      "title": "Discount code applies at checkout",
+      "module": "checkout",
+      "tests": [
+        "e2e/checkout/checkout-2.spec.ts"
+      ],
+      "priority": "medium",
+      "status": "open"
+    },
+    {
+      "id": "login-1",
+      "title": "User can log in with valid credentials",
+      "module": "login",
+      "tests": [
+        "e2e/login/login-1.spec.ts"
+      ],
+      "priority": "high",
+      "status": "open"
+    },
+    {
+      "id": "login-2",
+      "title": "Remember me keeps the session",
+      "module": "login",
+      "tests": [
+        "e2e/login/login-2.spec.ts"
+      ],
+      "priority": "medium",
+      "status": "open"
+    },
+    {
+      "id": "login-3",
+      "title": "Wrong password shows an error",
+      "module": "login",
+      "tests": [
+        "e2e/login/login-3.spec.ts"
+      ],
+      "priority": "high",
+      "status": "open"
+    },
+    {
+      "id": "profile-1",
+      "title": "Update profile display name",
+      "module": "profile",
+      "tests": [
+        "e2e/profile/profile-1.spec.ts"
+      ],
+      "priority": "medium",
+      "status": "open"
+    },
+    {
+      "id": "profile-2",
+      "title": "Upload a profile avatar",
+      "module": "profile",
+      "tests": [
+        "e2e/profile/profile-2.spec.ts"
+      ],
+      "priority": "low",
+      "status": "open"
+    },
+    {
+      "id": "search-1",
+      "title": "Search query returns results",
+      "module": "search",
+      "tests": [
+        "e2e/search/search-1.spec.ts"
+      ],
+      "priority": "high",
+      "status": "open"
+    },
+    {
+      "id": "search-2",
+      "title": "Empty query shows a hint",
+      "module": "search",
+      "tests": [
+        "e2e/search/search-2.spec.ts"
+      ],
+      "priority": "low",
+      "status": "open"
+    },
+    {
+      "id": "cart-1",
+      "title": "Add an item to the cart",
+      "module": "cart",
+      "tests": [
+        "e2e/cart/cart-1.spec.ts"
+      ],
+      "priority": "high",
+      "status": "open"
+    },
+    {
+      "id": "cart-2",
+      "title": "Remove an item from the cart",
+      "module": "cart",
+      "tests": [
+        "e2e/cart/cart-2.spec.ts"
+      ],
+      "priority": "medium",
+      "status": "open"
+    },
+    {
+      "id": "cart-3",
+      "title": "Apply a gift card",
+      "module": "cart",
+      "tests": [
+        "e2e/cart/cart-3.spec.ts"
+      ],
+      "priority": "low",
+      "status": "open"
+    }
+  ],
+  "modules": {
+    "login": "Authentication and session flows",
+    "checkout": "Payment, discounts and tax at checkout",
+    "profile": "User profile management",
+    "search": "Site search behaviour",
+    "cart": "Shopping cart operations"
+  }
+}

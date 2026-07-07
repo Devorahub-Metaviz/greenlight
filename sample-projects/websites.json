@@ -1,0 +1,21 @@
+{
+  "sites": [
+    {
+      "id": "strwedding",
+      "name": "STR Wedding",
+      "prod": "https://strwedding.com",
+      "staging": "https://staging.strwedding.com"
+    },
+    {
+      "id": "top10str",
+      "name": "Top10 STR",
+      "prod": "https://top10str.com",
+      "staging": "https://staging.top10str.com"
+    },
+    {
+      "id": "qa-test-site",
+      "name": "QA Test Site",
+      "prod": "https://qa-test.example.com"
+    }
+  ]
+}
