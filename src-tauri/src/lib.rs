@@ -11,6 +11,21 @@ const APP_PORT: u16 = 47932;
 
 struct ServerProcess(Mutex<Option<Child>>);
 
+// std::env::current_exe() on Windows can return a `\\?\` extended-length
+// (verbatim) path. That form is fine for Win32 file APIs but Node's own
+// module resolution (realpathSync in run_main) does not understand it and
+// fails with EISDIR on the bare "C:" it mis-parses out of the prefix. Strip
+// it before these paths are ever used as command/argv for the node sidecar.
+fn simplify(p: &std::path::Path) -> std::path::PathBuf {
+    match p.to_str() {
+        Some(s) => match s.strip_prefix(r"\\?\") {
+            Some(stripped) => std::path::PathBuf::from(stripped),
+            None => p.to_path_buf(),
+        },
+        None => p.to_path_buf(),
+    }
+}
+
 // Candidate roots for our bundled resources, tried in order. resource_dir()
 // is the documented API, but Windows NSIS installs were observed to place
 // `app/` and `binaries/` directly next to the exe (no `resources/` wrapper),
@@ -19,11 +34,11 @@ struct ServerProcess(Mutex<Option<Child>>);
 fn candidate_roots(app: &tauri::AppHandle) -> Vec<std::path::PathBuf> {
     let mut roots = Vec::new();
     if let Ok(r) = app.path().resource_dir() {
-        roots.push(r);
+        roots.push(simplify(&r));
     }
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
-            roots.push(dir.to_path_buf());
+            roots.push(simplify(dir));
         }
     }
     roots
