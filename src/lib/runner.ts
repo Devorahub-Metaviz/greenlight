@@ -68,6 +68,15 @@ function walkSpecs(suite: PwSuite, parentFile: string | undefined, out: { file: 
   }
 }
 
+// e2e/<module>/<id>.spec.ts -> { module, id } (also e2e/<module>/<feature>/<id>.spec.ts).
+function deriveIdModule(file: string): { module: string; id: string } {
+  const segments = file.replace(/^e2e\//, "").split("/");
+  const module = segments.length > 1 ? segments[0] : "(root)";
+  const base = segments[segments.length - 1] ?? "";
+  const id = base.replace(/\.spec\.(ts|tsx|js|jsx|mjs)$/, "");
+  return { module, id };
+}
+
 function normalize(report: PwReport, projectPath: string): RunTestResult[] {
   const flat: { file: string; spec: PwSpec }[] = [];
   for (const s of report.suites ?? []) walkSpecs(s, undefined, flat);
@@ -94,10 +103,7 @@ function normalize(report: PwReport, projectPath: string): RunTestResult[] {
 
   const results: RunTestResult[] = [];
   for (const [file, e] of byFile) {
-    const segments = file.replace(/^e2e\//, "").split("/");
-    const module = segments.length > 1 ? segments[0] : "(root)";
-    const base = segments[segments.length - 1] ?? "";
-    const id = base.replace(/\.spec\.(ts|tsx|js|jsx|mjs)$/, "");
+    const { module, id } = deriveIdModule(file);
     results.push({
       id,
       file,
@@ -111,6 +117,10 @@ function normalize(report: PwReport, projectPath: string): RunTestResult[] {
   return results;
 }
 
+async function fileExists(p: string): Promise<boolean> {
+  try { await fs.access(p); return true; } catch { return false; }
+}
+
 export async function runTests(opts: RunOptions): Promise<RunLog> {
   const { projectPath, selection, headed, baseURL, workers, retries, onLine } = opts;
   const runId = nowRunId();
@@ -119,13 +129,41 @@ export async function runTests(opts: RunOptions): Promise<RunLog> {
   await fs.mkdir(logsDirPath, { recursive: true });
   const jsonOut = path.join(logsDirPath, `.raw-${runId}.json`);
 
-  const args = ["playwright", "test", ...selection];
+  const emit = (l: string) => onLine?.(stripAnsi(l).replace(/\r$/, ""));
+
+  // A selected spec's file can vanish between the client's test list load and
+  // this run (deleted on disk, moved, etc). Passing a missing path straight to
+  // Playwright just produces a generic "no tests found" - check first so each
+  // one gets a clear, specific warning and never blocks the tests that do exist.
+  const missingResults: RunTestResult[] = [];
+  let existingSelection = selection;
+  if (selection.length > 0) {
+    existingSelection = [];
+    for (const file of selection) {
+      if (await fileExists(path.join(projectPath, file))) {
+        existingSelection.push(file);
+      } else {
+        const { module, id } = deriveIdModule(file);
+        emit(`⚠ ${file} not found on disk - its script is missing, skipping this test`);
+        missingResults.push({ id, file, module, status: "skipped", durationMs: 0, error: "Script file not found - it may have been deleted or moved." });
+      }
+    }
+    if (existingSelection.length === 0) {
+      emit("No selected tests have a script file on disk - nothing to run.");
+      const finishedAt = new Date().toISOString();
+      const summary = { total: missingResults.length, passed: 0, failed: 0, skipped: missingResults.length, durationMs: 0 };
+      const log: RunLog = { runId, startedAt, finishedAt, baseURL, headed, selection, summary, tests: missingResults };
+      await fs.writeFile(path.join(logsDirPath, `run-${runId}.json`), JSON.stringify(log, null, 2), "utf8");
+      return log;
+    }
+  }
+
+  const args = ["playwright", "test", ...existingSelection];
   if (headed) args.push("--headed");
   if (typeof workers === "number") args.push(`--workers=${workers}`);
   if (typeof retries === "number") args.push(`--retries=${retries}`);
   args.push("--reporter=list,json");
 
-  const emit = (l: string) => onLine?.(stripAnsi(l).replace(/\r$/, ""));
   emit(`$ npx ${args.join(" ")}`);
   emit(`baseURL=${baseURL} headed=${headed}`);
 
@@ -174,6 +212,7 @@ export async function runTests(opts: RunOptions): Promise<RunLog> {
   } catch {
     emit(`could not read JSON report (exit ${exitCode})`);
   }
+  tests = [...tests, ...missingResults];
 
   const summary = {
     total: tests.length,
