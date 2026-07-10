@@ -544,6 +544,62 @@ function ChangeRootModal({ initial, onClose, onSave }: { initial: string; onClos
   );
 }
 
+// Manual counterpart to the auto-check-on-launch toast (UpdateChecker.tsx) -
+// same updater plugin calls, triggered on demand instead of once at startup.
+function UpdateSettingsRow() {
+  const [state, setState] = useState<"idle" | "checking" | "current" | "available" | "installing" | "error">("idle");
+  const [version, setVersion] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [handle, setHandle] = useState<{ downloadAndInstall: () => Promise<void> } | null>(null);
+
+  if (!inTauri()) return null;
+
+  async function checkNow() {
+    setState("checking"); setError(null);
+    try {
+      const { check } = await import("@tauri-apps/plugin-updater");
+      const found = await check();
+      if (found) { setVersion(found.version); setHandle({ downloadAndInstall: () => found.downloadAndInstall() }); setState("available"); }
+      else setState("current");
+    } catch (e) { setError((e as Error).message); setState("error"); }
+  }
+
+  async function install() {
+    if (!handle) return;
+    setState("installing"); setError(null);
+    try {
+      await handle.downloadAndInstall();
+      const { relaunch } = await import("@tauri-apps/plugin-process");
+      await relaunch();
+    } catch (e) { setError((e as Error).message); setState("error"); }
+  }
+
+  return (
+    <div className="mb-1 mt-2 flex items-center gap-3 rounded-xl border border-border bg-surface px-3 py-2.5">
+      <RefreshCw className={cn("h-5 w-5 shrink-0 text-primary", state === "checking" && "animate-spin")} />
+      <div className="min-w-0 flex-1">
+        <div className="text-sm font-medium">Updates</div>
+        <div className="text-[11px] text-muted-foreground">
+          {state === "idle" && "Check if a newer version is available"}
+          {state === "checking" && "Checking…"}
+          {state === "current" && "You're on the latest version"}
+          {state === "available" && `v${version} is available`}
+          {state === "installing" && "Downloading & installing…"}
+          {state === "error" && (error || "Check failed")}
+        </div>
+      </div>
+      {state === "available" ? (
+        <button onClick={install} className="rounded-lg bg-gradient-primary px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-95">Install &amp; Restart</button>
+      ) : (
+        <button onClick={checkNow} disabled={state === "checking" || state === "installing"}
+          className="rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium transition hover:border-primary/50 disabled:opacity-50">
+          Check for updates
+        </button>
+      )}
+    </div>
+  );
+}
+
 // ---- Settings ----
 function SettingsModal({ initial, gh, rootPath, projectName, onChangeRoot, onManageWebsites, onConnectGitHub, onChangeApp, onLogout, onClearIssues, onClose, onSaved }: {
   initial: AppSettings; gh: GitHubStatus | null; rootPath: string; projectName: string | null; onChangeRoot: () => void; onManageWebsites: () => void;
@@ -661,6 +717,8 @@ function SettingsModal({ initial, gh, rootPath, projectName, onChangeRoot, onMan
             )}
           </div>
         )}
+
+        <UpdateSettingsRow />
 
         <Row title="Run headed by default" desc="Show the browser window when running tests">
           <Toggle on={s.defaultHeaded} onChange={(v) => setS({ ...s, defaultHeaded: v })} />

@@ -1,6 +1,20 @@
+import { useEffect, useState } from "react";
 import { Folder, Leaf, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import type { Project, TestItem } from "@/lib/e2e-mock";
 import { cn } from "@/lib/utils";
+
+function inTauri(): boolean {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
+function useAppVersion(): string | null {
+  const [version, setVersion] = useState<string | null>(null);
+  useEffect(() => {
+    if (!inTauri()) return;
+    import("@tauri-apps/api/app").then(({ getVersion }) => getVersion()).then(setVersion).catch(() => {});
+  }, []);
+  return version;
+}
 
 interface Props {
   projects: Project[];
@@ -15,6 +29,7 @@ interface Props {
 }
 
 export function Sidebar({ projects, selectedId, onSelect, rootPath, onChangeRoot, onManageWebsites, collapsed, onToggleCollapse }: Props) {
+  const version = useAppVersion();
   if (collapsed) {
     return (
       <aside className="flex h-full w-16 shrink-0 flex-col items-center gap-3 border-r border-border bg-sidebar py-4">
@@ -73,7 +88,7 @@ export function Sidebar({ projects, selectedId, onSelect, rootPath, onChangeRoot
           className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs font-medium text-muted-foreground transition hover:bg-sidebar-accent/50 hover:text-foreground">
           <PanelLeftClose className="h-4 w-4" /> Collapse
         </button>
-        <span className="ml-auto text-[11px] text-muted-foreground">v0.1.0</span>
+        {version && <span className="ml-auto text-[11px] text-muted-foreground">v{version}</span>}
       </div>
     </aside>
   );
