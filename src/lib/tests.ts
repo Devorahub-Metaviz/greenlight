@@ -1,11 +1,15 @@
 // Enumerate E2E test cases for a project by walking the e2e/ folder.
-// Convention: e2e/<module>/<id>.spec.ts  (module = first segment, id = file basename)
+// Two conventions are supported side by side:
+//   Playwright/TS: e2e/<module>/<id>.spec.ts        (module = first segment, id = file basename)
+//   pytest/Python: e2e/<Module>/tc<n>_<slug>.py      (matches pytest.ini's `python_files = tc*.py`;
+//                  leading-underscore files and config.py are page-object/helper modules, never tests)
 import { promises as fs } from "fs";
 import path from "path";
 import type { ModuleGroup, TestCase } from "./types";
 
-const SPEC_RE = /\.spec\.(ts|tsx|js|jsx|mjs)$/;
-const IGNORE_DIRS = new Set(["logs", "docs", "node_modules", "test-results", "playwright-report"]);
+const TS_SPEC_RE = /\.spec\.(ts|tsx|js|jsx|mjs)$/;
+const PY_SPEC_RE = /^tc.*\.py$/i;
+const IGNORE_DIRS = new Set(["logs", "docs", "node_modules", "test-results", "playwright-report", "__pycache__", ".pytest_cache"]);
 
 async function walk(dir: string, e2eRoot: string, out: TestCase[]): Promise<void> {
   let entries: import("fs").Dirent[];
@@ -19,20 +23,25 @@ async function walk(dir: string, e2eRoot: string, out: TestCase[]): Promise<void
     if (entry.isDirectory()) {
       if (IGNORE_DIRS.has(entry.name) || entry.name.startsWith(".")) continue;
       await walk(full, e2eRoot, out);
-    } else if (SPEC_RE.test(entry.name)) {
-      const relFromE2e = path.relative(e2eRoot, full).split(path.sep).join("/");
-      const segments = relFromE2e.split("/");
-      // e2e/<module>/<id>.spec.ts  OR  e2e/<module>/<feature>/<id>.spec.ts
-      const module = segments.length > 1 ? segments[0] : "(root)";
-      const feature = segments.length > 2 ? segments[1] : undefined;
-      const id = entry.name.replace(SPEC_RE, "");
-      out.push({
-        id,
-        module,
-        feature,
-        file: `e2e/${relFromE2e}`,
-      });
+      continue;
     }
+    const isTs = TS_SPEC_RE.test(entry.name);
+    const isPy = PY_SPEC_RE.test(entry.name);
+    if (!isTs && !isPy) continue;
+
+    const relFromE2e = path.relative(e2eRoot, full).split(path.sep).join("/");
+    const segments = relFromE2e.split("/");
+    // e2e/<module>/<id>.ext  OR  e2e/<module>/<feature>/<id>.ext
+    const module = segments.length > 1 ? segments[0] : "(root)";
+    const feature = segments.length > 2 ? segments[1] : undefined;
+    const id = isTs ? entry.name.replace(TS_SPEC_RE, "") : entry.name.replace(/\.py$/i, "");
+    out.push({
+      id,
+      module,
+      feature,
+      file: `e2e/${relFromE2e}`,
+      runtime: isTs ? "playwright" : "pytest",
+    });
   }
 }
 

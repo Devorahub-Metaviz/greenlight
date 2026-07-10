@@ -5,7 +5,7 @@ import { z } from "zod";
 import type { ChecklistItem, SqaFile } from "./types";
 
 const prioritySchema = z.enum(["high", "medium", "low"]);
-const statusSchema = z.enum(["open", "in-progress", "done"]);
+const statusSchema = z.enum(["open", "in-progress", "done", "blocked"]);
 
 const itemSchema = z.object({
   id: z.string().min(1),
@@ -28,11 +28,18 @@ function sqaPath(projectPath: string): string {
 }
 
 export async function readSqa(projectPath: string, projectName: string): Promise<SqaFile> {
+  let raw: string;
   try {
-    const raw = await fs.readFile(sqaPath(projectPath), "utf8");
-    const parsed = sqaSchema.parse(JSON.parse(raw));
-    return parsed as SqaFile;
+    raw = await fs.readFile(sqaPath(projectPath), "utf8");
   } catch {
+    return { project: projectName, checklist: [] }; // no sqa.json yet - normal for a new project
+  }
+  try {
+    return sqaSchema.parse(JSON.parse(raw)) as SqaFile;
+  } catch (err) {
+    // A malformed/invalid sqa.json silently produced an empty checklist before,
+    // which looked identical to "no tests exist" - log it so this is diagnosable.
+    console.error(`sqa.json at ${sqaPath(projectPath)} failed validation, showing an empty checklist:`, err);
     return { project: projectName, checklist: [] };
   }
 }
@@ -52,7 +59,7 @@ export async function writeSqa(projectPath: string, sqa: SqaFile): Promise<void>
   await fs.rename(tmp, file);
 }
 
-function starterSpec(item: ChecklistItem): string {
+function starterSpecTs(item: ChecklistItem): string {
   return `import { test, expect } from "@playwright/test";
 
 // ${item.id} - ${item.title}
@@ -64,17 +71,62 @@ test(${JSON.stringify(item.title || item.id)}, async ({ page }) => {
 `;
 }
 
-// Create a starter spec file if it does not exist. Returns its relative path.
+function slugify(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 60) || "test";
+}
+
+function starterSpecPy(item: ChecklistItem, funcName: string): string {
+  return `"""${item.id} - ${item.title}"""
+from playwright.sync_api import expect
+
+
+def ${funcName}(page):
+    page.goto("/")
+    # TODO: implement checks for ${item.id}
+    expect(page).to_have_url(page.url)
+`;
+}
+
+// A project is Python/pytest-based if it has a pytest.ini (vs a TS/Playwright
+// project's playwright.config.ts). Falls back to TS for a brand-new project.
+async function isPytestProject(projectPath: string): Promise<boolean> {
+  try {
+    await fs.access(path.join(projectPath, "pytest.ini"));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Create a starter test file if it does not exist. Returns its relative path.
 export async function createStarterSpec(projectPath: string, item: ChecklistItem): Promise<string> {
-  const rel = item.feature
-    ? `e2e/${item.module}/${item.feature}/${item.id}.spec.ts`
-    : `e2e/${item.module}/${item.id}.spec.ts`;
+  const dir = item.feature ? `${item.module}/${item.feature}` : item.module;
+
+  if (await isPytestProject(projectPath)) {
+    const num = item.id.match(/(\d+)/)?.[1];
+    const base = num ? `tc${num}_${slugify(item.title || item.id)}` : `tc_${slugify(item.id)}_${slugify(item.title)}`;
+    const rel = `e2e/${dir}/${base}.py`;
+    const abs = path.join(projectPath, rel);
+    await fs.mkdir(path.dirname(abs), { recursive: true });
+    try {
+      await fs.access(abs); // already exists, leave it alone
+    } catch {
+      await fs.writeFile(abs, starterSpecPy(item, `test_${base}`), "utf8");
+    }
+    return rel;
+  }
+
+  const rel = `e2e/${dir}/${item.id}.spec.ts`;
   const abs = path.join(projectPath, rel);
   await fs.mkdir(path.dirname(abs), { recursive: true });
   try {
     await fs.access(abs); // already exists, leave it alone
   } catch {
-    await fs.writeFile(abs, starterSpec(item), "utf8");
+    await fs.writeFile(abs, starterSpecTs(item), "utf8");
   }
   return rel;
 }

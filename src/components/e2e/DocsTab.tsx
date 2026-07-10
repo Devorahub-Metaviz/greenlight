@@ -115,19 +115,22 @@ export function DocsTab({ projectId, onImported }: { projectId?: string; onImpor
         </Section>
 
         <Section title="Folder structure (for reference)">
+          <p className="text-muted-foreground">A project is Playwright/TypeScript, pytest/Python, or both at once - each test file is routed to the runner that owns its extension.</p>
           <Code>{`sqa/                         # QA root - no app / repo code
-  package.json               # ONE shared @playwright/test install
-  node_modules/               # shared by every project below - install once here
-  .claude/skills/e2e-test/    # the skill, keeps specs + sqa.json in sync
+  .claude/skills/e2e-test/    # the skill, keeps tests + sqa.json in sync
   str/                       # a project (one site under test)
-    playwright.config.ts     # testDir ./e2e, baseURL from env
     sqa.json                 # checklist (modules + one item per test)
     e2e/
-      <module>/<id>.spec.ts   # modules (folders) + scripts (specs)
-      logs/                   # run logs, generated automatically`}</Code>
+      <module>/<id>.spec.ts   # Playwright/TS: one spec file per test case
+      <Module>/tc<n>_<slug>.py  # pytest: one file per test case
+      logs/                   # run logs, generated automatically
+
+  # Playwright projects also have playwright.config.ts (shared node_modules
+  # at the QA root). pytest projects also have their own requirements.txt
+  # and pytest.ini (python_files = tc*.py, addopts --base-url=<site>).`}</Code>
           <div className="flex items-start gap-2 rounded-xl border border-border bg-surface p-3 text-[13px] text-muted-foreground">
             <FolderGit2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-            <span>Projects never get their own <span className="font-mono text-foreground">package.json</span>/<span className="font-mono text-foreground">node_modules</span> - Node resolves Playwright by walking up to the shared root install, so adding a project costs zero install time.</span>
+            <span>Playwright projects never get their own <span className="font-mono text-foreground">package.json</span>/<span className="font-mono text-foreground">node_modules</span> - Node resolves Playwright by walking up to a shared root install. pytest projects keep their own <span className="font-mono text-foreground">requirements.txt</span> instead, since Python venvs are per-project.</span>
           </div>
         </Section>
 

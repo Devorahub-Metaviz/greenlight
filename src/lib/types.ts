@@ -1,8 +1,9 @@
 // Shared types for the E2E orchestrator.
 
 export type Priority = "high" | "medium" | "low";
-export type ChecklistStatus = "open" | "in-progress" | "done";
+export type ChecklistStatus = "open" | "in-progress" | "done" | "blocked";
 export type TestStatus = "passed" | "failed" | "skipped" | "timedout" | "stale" | "unknown";
+export type TestRuntime = "playwright" | "pytest";
 
 export interface ChecklistItem {
   id: string;            // test case code, e.g. "login-1"
@@ -30,6 +31,7 @@ export interface TestCase {
   module: string;        // first folder under e2e/
   feature?: string;      // optional second folder under e2e/<module>/
   file: string;          // relative path, e.g. "e2e/auth/login/login-1.spec.ts"
+  runtime: TestRuntime;  // which runner executes this file
 }
 
 export interface ModuleGroup {
