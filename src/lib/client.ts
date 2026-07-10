@@ -61,7 +61,7 @@ export async function getLogs(projectId: string) {
 }
 
 // ---- GitHub ----
-export interface GitHubStatus { hasClientId: boolean; authenticated: boolean; login: string | null }
+export interface GitHubStatus { hasClientId: boolean; clientId: string | null; authenticated: boolean; login: string | null }
 export interface GitHubDevice { device_code: string; user_code: string; verification_uri: string; verification_uri_complete?: string; interval: number; expires_in: number }
 export interface Repo { full_name: string; name: string; owner: string }
 export interface Board { id: string; title: string; number: number }
@@ -99,6 +99,9 @@ export async function createIssues(projectId: string, failures: Record<string, u
     await fetch(`/api/projects/${encodeURIComponent(projectId)}/issues`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ failures, addToBoard }) })
   );
 }
+export async function clearIssues(projectId: string) {
+  return j<{ issues: Record<string, IssueRecord> }>(await fetch(`/api/projects/${encodeURIComponent(projectId)}/issues`, { method: "DELETE" }));
+}
 
 export interface AppSettings { defaultHeaded: boolean; autoOpenFailPanel: boolean; workers: number | null; retries: number | null }
 export async function getSettings() {
@@ -128,12 +131,14 @@ export async function websiteAction(payload: Record<string, unknown>) {
 export async function runTests(
   projectId: string,
   opts: { selection: string[]; headed: boolean; baseURL?: string; preset?: string },
-  onLine: (line: string) => void
+  onLine: (line: string) => void,
+  signal?: AbortSignal
 ): Promise<RunLog | null> {
   const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/run`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(opts),
+    signal,
   });
   if (!res.ok || !res.body) throw new Error(`Run failed (${res.status})`);
 
@@ -142,22 +147,27 @@ export async function runTests(
   let buf = "";
   let finalLog: RunLog | null = null;
 
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buf += decoder.decode(value, { stream: true });
-    const chunks = buf.split("\n\n");
-    buf = chunks.pop() ?? "";
-    for (const chunk of chunks) {
-      const evMatch = chunk.match(/^event: (.+)$/m);
-      const dataMatch = chunk.match(/^data: (.+)$/m);
-      if (!evMatch || !dataMatch) continue;
-      const event = evMatch[1];
-      const data = JSON.parse(dataMatch[1]);
-      if (event === "log") onLine(data.line as string);
-      else if (event === "done") finalLog = data as RunLog;
-      else if (event === "error") throw new Error(data.message);
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const chunks = buf.split("\n\n");
+      buf = chunks.pop() ?? "";
+      for (const chunk of chunks) {
+        const evMatch = chunk.match(/^event: (.+)$/m);
+        const dataMatch = chunk.match(/^data: (.+)$/m);
+        if (!evMatch || !dataMatch) continue;
+        const event = evMatch[1];
+        const data = JSON.parse(dataMatch[1]);
+        if (event === "log") onLine(data.line as string);
+        else if (event === "done") finalLog = data as RunLog;
+        else if (event === "error") throw new Error(data.message);
+      }
     }
+  } catch (e) {
+    if ((e as Error).name === "AbortError") return finalLog;
+    throw e;
   }
   return finalLog;
 }

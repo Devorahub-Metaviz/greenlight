@@ -9,6 +9,19 @@ import {
 import type { RunLog } from "@/lib/e2e-mock";
 import { cn } from "@/lib/utils";
 
+// Tauri's webview doesn't hand target="_blank" off to the system browser -
+// it needs the shell plugin's open() call explicitly. No-op fallback (plain
+// <a> behavior) outside the Tauri shell, e.g. `next dev` in a real browser.
+function inTauri(): boolean {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+async function openExternal(e: React.MouseEvent, url: string) {
+  if (!inTauri()) return;
+  e.preventDefault();
+  const { open } = await import("@tauri-apps/plugin-shell");
+  await open(url);
+}
+
 const overlay = "fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm";
 const panel = "w-full rounded-2xl border border-border bg-card p-5 shadow-elevated";
 const input = "h-9 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-ring/30";
@@ -94,9 +107,10 @@ export function GitHubLoginModal({ hasClientId, onClose, onAuthed }: { hasClient
         ) : step === "clientId" ? (
           <>
             <p className="mb-3 text-sm text-muted-foreground">Paste your GitHub OAuth App <b>Client ID</b>. When creating the app, tick <b>Enable Device Flow</b>.</p>
-            <a href="https://github.com/settings/applications/new" target="_blank" rel="noreferrer" className={cn(btnGhost, "mb-3 w-full justify-center")}>
+            <a href="https://github.com/settings/applications/new" target="_blank" rel="noreferrer" onClick={(e) => openExternal(e, "https://github.com/settings/applications/new")} className={cn(btnGhost, "mb-3 w-full justify-center")}>
               <ExternalLink className="h-4 w-4" /> Create a GitHub OAuth App
             </a>
+            <p className="mb-2 text-xs text-muted-foreground">Or paste an existing app&apos;s <b>Client ID</b> from <span className="font-mono">github.com/settings/developers</span>.</p>
             <input className={cn(input, "font-mono")} placeholder="Iv1.xxxxxxxxxxxx" value={clientId} onChange={(e) => setClientId(e.target.value)} />
             <p className="mt-1.5 text-[11px] text-muted-foreground">Callback URL can be anything (e.g. <span className="font-mono">http://localhost</span>); Device Flow doesn&apos;t use it.</p>
             {error && <div className="mt-2 text-sm text-destructive">{error}</div>}
@@ -116,7 +130,7 @@ export function GitHubLoginModal({ hasClientId, onClose, onAuthed }: { hasClient
                     {codeCopied ? <Check className="h-4 w-4 text-[var(--color-success)]" /> : <Copy className="h-4 w-4" />}
                   </button>
                 </div>
-                <a href={device.verification_uri_complete || device.verification_uri} target="_blank" rel="noreferrer" className={cn(btnPrimary, "w-full")}>
+                <a href={device.verification_uri_complete || device.verification_uri} target="_blank" rel="noreferrer" onClick={(e) => openExternal(e, device.verification_uri_complete || device.verification_uri)} className={cn(btnPrimary, "w-full")}>
                   <ExternalLink className="h-4 w-4" /> Open GitHub authorization page
                 </a>
                 <div className="mt-2 flex items-center justify-between">
@@ -216,7 +230,12 @@ export function FailuresModal({ projectId, log, connection, existing, onClose, o
   onClose: () => void; onConnect: () => void; onCreated: (issues: Record<string, IssueRecord>) => void;
 }) {
   const failures = useMemo(() => log.tests.filter((t) => t.status === "failed"), [log]);
-  const [selected, setSelected] = useState<Set<string>>(new Set(failures.filter((f) => !existing[f.id]).map((f) => f.id)));
+  // A test that fails again in a run after its issue was filed is a fresh
+  // occurrence (could be a regression, could be the same bug never fixed) -
+  // either way it's worth re-filing, so don't treat the old issue as blocking.
+  const [selected, setSelected] = useState<Set<string>>(
+    new Set(failures.filter((f) => !existing[f.id] || new Date(existing[f.id].createdAt).getTime() < log.finishedAt).map((f) => f.id))
+  );
   const [addToBoard, setAddToBoard] = useState(!!connection?.boardId);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -259,13 +278,14 @@ export function FailuresModal({ projectId, log, connection, existing, onClose, o
             <div className="mb-3 max-h-64 overflow-y-auto scrollbar-thin rounded-xl border border-border">
               {failures.map((f) => {
                 const rec = issues[f.id];
+                const stale = !rec || new Date(rec.createdAt).getTime() < log.finishedAt;
                 return (
                   <label key={f.id} className="flex items-center gap-3 border-b border-border px-3 py-2.5 text-sm last:border-b-0">
-                    <input type="checkbox" disabled={!!rec} checked={selected.has(f.id)} onChange={() => toggle(f.id)} className="h-3.5 w-3.5 accent-[var(--color-primary)]" />
+                    <input type="checkbox" disabled={!!rec && !stale} checked={selected.has(f.id)} onChange={() => toggle(f.id)} className="h-3.5 w-3.5 accent-[var(--color-primary)]" />
                     <span className="font-mono text-[13px] font-medium text-primary">{f.id}</span>
                     <span className="truncate font-mono text-[11px] text-muted-foreground">{f.file}</span>
                     {rec ? (
-                      <a href={rec.url} target="_blank" rel="noreferrer" className="ml-auto inline-flex items-center gap-1 text-[11px] font-medium text-[var(--color-success)] hover:underline">#{rec.number} <ExternalLink className="h-3 w-3" /></a>
+                      <a href={rec.url} target="_blank" rel="noreferrer" onClick={(e) => openExternal(e, rec.url)} className="ml-auto inline-flex items-center gap-1 text-[11px] font-medium text-[var(--color-success)] hover:underline">#{rec.number} <ExternalLink className="h-3 w-3" /></a>
                     ) : <span className="ml-auto text-[11px] text-muted-foreground">new</span>}
                   </label>
                 );

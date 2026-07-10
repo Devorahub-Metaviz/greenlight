@@ -23,6 +23,20 @@ export interface RunOptions {
   workers?: number | null;
   retries?: number | null;
   onLine?: (line: string) => void;
+  signal?: AbortSignal;
+}
+
+// `shell: true` spawns npx via cmd.exe on Windows, so the child's own pid is
+// cmd.exe, not the node/playwright process underneath it - killing just that
+// pid leaves the real test run (and its workers) orphaned and still running.
+// taskkill's /t walks the whole process tree started from that pid.
+function killTree(pid: number | undefined): void {
+  if (!pid) return;
+  if (process.platform === "win32") {
+    spawn("taskkill", ["/pid", String(pid), "/t", "/f"]);
+  } else {
+    try { process.kill(-pid, "SIGKILL"); } catch { /* process already gone */ }
+  }
 }
 
 // --- Playwright JSON report -> our normalized results -----------------------
@@ -122,7 +136,7 @@ async function fileExists(p: string): Promise<boolean> {
 }
 
 export async function runTests(opts: RunOptions): Promise<RunLog> {
-  const { projectPath, selection, headed, baseURL, workers, retries, onLine } = opts;
+  const { projectPath, selection, headed, baseURL, workers, retries, onLine, signal } = opts;
   const runId = nowRunId();
   const startedAt = new Date().toISOString();
   const logsDirPath = path.join(projectPath, "e2e", "logs");
@@ -171,6 +185,7 @@ export async function runTests(opts: RunOptions): Promise<RunLog> {
     const child = spawn("npx", args, {
       cwd: projectPath,
       shell: true,
+      detached: process.platform !== "win32", // lets killTree signal the whole group on POSIX
       env: {
         ...process.env,
         PLAYWRIGHT_BASE_URL: baseURL,
@@ -181,6 +196,8 @@ export async function runTests(opts: RunOptions): Promise<RunLog> {
     });
     let bufOut = "";
     let bufErr = "";
+    let settled = false;
+    const finish = (code: number) => { if (!settled) { settled = true; resolve(code); } };
     const pump = (chunk: string, which: "out" | "err") => {
       let buf = which === "out" ? bufOut + chunk : bufErr + chunk;
       const lines = buf.split("\n");
@@ -194,12 +211,18 @@ export async function runTests(opts: RunOptions): Promise<RunLog> {
     child.on("close", (code) => {
       if (bufOut) emit(bufOut);
       if (bufErr) emit(bufErr);
-      resolve(code ?? 1);
+      finish(code ?? 1);
     });
     child.on("error", (err) => {
       emit(`spawn error: ${err.message}`);
-      resolve(1);
+      finish(1);
     });
+
+    if (signal) {
+      const stop = () => { emit("\n⏹ Run stopped by user."); killTree(child.pid); };
+      if (signal.aborted) stop();
+      else signal.addEventListener("abort", stop, { once: true });
+    }
   });
 
   const finishedAt = new Date().toISOString();

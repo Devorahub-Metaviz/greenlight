@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, Loader2, PanelRightClose, PanelRightOpen, Play, Search } from "lucide-react";
+import { ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, PanelRightClose, PanelRightOpen, Play, Search, Square } from "lucide-react";
 import { fmtDuration, timeAgo, type RunLog, type TestItem, type TestStatus } from "@/lib/e2e-mock";
 import { StatusBadge, StatusDot } from "./StatusBadge";
 import { cn } from "@/lib/utils";
@@ -17,7 +17,7 @@ interface Props {
     opts: { headed: boolean; baseURL: string },
     onLine: (line: ConsoleLine) => void,
     onDone: (log: RunLog) => void,
-  ) => void;
+  ) => (() => void) | void;
   onUpdateTestStatus: (id: string, status: TestStatus) => void;
 }
 
@@ -43,6 +43,7 @@ export function TestsTab({ projectName, tests, lastRun, baseUrls, defaultHeaded 
   const [lines, setLines] = useState<ConsoleLine[]>([]);
   const [runSummary, setRunSummary] = useState<string>("");
   const consoleRef = useRef<HTMLDivElement>(null);
+  const stopRef = useRef<(() => void) | null>(null);
 
   const toggleCollapse = (module: string) =>
     setCollapsed((prev) => { const n = new Set(prev); if (n.has(module)) n.delete(module); else n.add(module); return n; });
@@ -111,17 +112,26 @@ export function TestsTab({ projectName, tests, lastRun, baseUrls, defaultHeaded 
     setRunning(true);
     setLines([]);
     setRunSummary("");
-    onRun(
+    const stop = onRun(
       ids,
       { headed: defaultHeaded, baseURL },
       (line) => setLines((prev) => [...prev, line]),
       (log) => {
         setRunning(false);
+        stopRef.current = null;
         setRunSummary(
           `${log.summary.passed} passed · ${log.summary.failed} failed · ${log.summary.skipped} skipped · ${fmtDuration(log.summary.durationMs)}`,
         );
       },
     );
+    stopRef.current = stop ?? null;
+  };
+
+  const doStop = () => {
+    stopRef.current?.();
+    stopRef.current = null;
+    setRunning(false);
+    setRunSummary("stopped");
   };
 
   const allChecked = tests.length > 0 && selected.size === tests.length;
@@ -163,23 +173,24 @@ export function TestsTab({ projectName, tests, lastRun, baseUrls, defaultHeaded 
           >
             Run selected
           </button>
-          <button
-            disabled={running || tests.length === 0}
-            onClick={() => doRun(tests.map((t) => t.id))}
-            className="inline-flex h-9 items-center gap-2 rounded-lg bg-gradient-primary px-4 text-sm font-semibold text-white shadow-elevated transition hover:opacity-95 disabled:opacity-60"
-          >
-            {running ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Running
-              </>
-            ) : (
-              <>
-                <Play className="h-4 w-4 fill-white" strokeWidth={0} />
-                Run all
-              </>
-            )}
-          </button>
+          {running ? (
+            <button
+              onClick={doStop}
+              className="inline-flex h-9 items-center gap-2 rounded-lg bg-destructive px-4 text-sm font-semibold text-white shadow-elevated transition hover:opacity-90"
+            >
+              <Square className="h-3.5 w-3.5 fill-white" strokeWidth={0} />
+              Stop
+            </button>
+          ) : (
+            <button
+              disabled={tests.length === 0}
+              onClick={() => doRun(tests.map((t) => t.id))}
+              className="inline-flex h-9 items-center gap-2 rounded-lg bg-gradient-primary px-4 text-sm font-semibold text-white shadow-elevated transition hover:opacity-95 disabled:opacity-60"
+            >
+              <Play className="h-4 w-4 fill-white" strokeWidth={0} />
+              Run all
+            </button>
+          )}
         </div>
       </div>
 

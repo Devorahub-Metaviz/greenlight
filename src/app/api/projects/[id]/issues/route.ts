@@ -3,6 +3,7 @@ import { promises as fs } from "fs";
 import path from "path";
 import { resolveProject } from "@/lib/projects";
 import { getConnection, createIssue, addIssueToBoard } from "@/lib/github";
+import { readSqa, writeSqa } from "@/lib/sqa";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,6 +27,16 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const project = await resolveProject(id);
   if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
   return NextResponse.json({ issues: await readRecords(project.path) });
+}
+
+// Forgets which tests already have a filed GitHub issue (doesn't touch GitHub
+// itself) - every failure becomes re-filable again next run.
+export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const project = await resolveProject(id);
+  if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
+  await writeRecords(project.path, {});
+  return NextResponse.json({ issues: {} });
 }
 
 interface Failure { testId: string; file: string; error?: string; baseURL?: string; runId?: string }
@@ -76,5 +87,20 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
 
   await writeRecords(project.path, records);
+
+  // A failing test with a freshly-filed issue is by definition not done -
+  // flip its checklist entry back to "open" so it surfaces on the checklist again.
+  if (created.length > 0) {
+    const sqa = await readSqa(project.path, project.name);
+    let changed = false;
+    for (const c of sqa.checklist) {
+      if (created.some((r) => r.testId === c.id) && c.status === "done") {
+        c.status = "open";
+        changed = true;
+      }
+    }
+    if (changed) await writeSqa(project.path, sqa);
+  }
+
   return NextResponse.json({ created, errors, issues: records });
 }

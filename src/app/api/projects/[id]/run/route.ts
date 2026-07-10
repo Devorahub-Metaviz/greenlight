@@ -27,8 +27,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
+      // If the client stops the run (aborting its fetch), enqueueing on this
+      // already-torn-down stream throws - swallow it, the process kill below
+      // still happens regardless of whether anyone's listening for the event.
       const send = (event: string, data: unknown) => {
-        controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+        try { controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)); } catch { /* client gone */ }
       };
       try {
         const settings = await readSettings();
@@ -40,12 +43,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           workers: settings.workers,
           retries: settings.retries,
           onLine: (line) => send("log", { line }),
+          signal: req.signal,
         });
         send("done", log);
       } catch (err) {
         send("error", { message: (err as Error).message });
       } finally {
-        controller.close();
+        try { controller.close(); } catch { /* already closed */ }
       }
     },
   });

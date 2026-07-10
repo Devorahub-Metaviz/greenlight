@@ -1,10 +1,10 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import { BarChart3, BookOpen, Check, ClipboardList, FlaskConical, FolderGit2, Globe, History as HistoryIcon, Leaf, Moon, Pencil, Plus, Settings, Sun, Trash2, X, Zap } from "lucide-react";
+import { BarChart3, BookOpen, Check, ClipboardList, FlaskConical, FolderGit2, GitBranch, Globe, History as HistoryIcon, Leaf, Moon, Pencil, Plus, RefreshCw, Settings, Sun, Trash2, X, Zap } from "lucide-react";
 import {
   getConfig, setProjectsRoot, getProjects, getTests, getSqa, sqaAction,
   getLogs, getWebsites, websiteAction, runTests, type Site,
-  githubStatus, githubLogout, getConnection, getIssues,
+  githubStatus, githubLogout, getConnection, getIssues, clearIssues,
   getSettings, saveSettings,
   type GitHubStatus, type Connection, type IssueRecord, type AppSettings,
 } from "@/lib/client";
@@ -113,6 +113,7 @@ export default function Home() {
   const [connection, setConnection] = useState<Connection | null>(null);
   const [issues, setIssues] = useState<Record<string, IssueRecord>>({});
   const [loginOpen, setLoginOpen] = useState(false);
+  const [changeApp, setChangeApp] = useState(false);
   const [connectOpen, setConnectOpen] = useState(false);
   const [failLog, setFailLog] = useState<UIRunLog | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -205,6 +206,17 @@ export default function Home() {
     loadConnection(selectedId); loadIssues(selectedId);
   }, [selectedId, loadTests, loadChecklist, loadHistory, loadBaseUrls, loadConnection, loadIssues]);
 
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshAll = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await loadProjects();
+      if (selectedId) {
+        await Promise.all([loadTests(selectedId), loadChecklist(selectedId), loadHistory(selectedId), loadBaseUrls(selectedId), loadConnection(selectedId), loadIssues(selectedId)]);
+      }
+    } finally { setRefreshing(false); }
+  }, [selectedId, loadProjects, loadTests, loadChecklist, loadHistory, loadBaseUrls, loadConnection, loadIssues]);
+
   async function saveRoot() {
     setRootError(null);
     try {
@@ -246,7 +258,8 @@ export default function Home() {
         if (st) setTests((prev) => prev.map((t) => (t.file === file ? { ...t, lastStatus: st! } : t)));
       };
 
-      runTests(selectedId, { selection, headed: opts.headed, baseURL: opts.baseURL }, onRaw)
+      const controller = new AbortController();
+      runTests(selectedId, { selection, headed: opts.headed, baseURL: opts.baseURL }, onRaw, controller.signal)
         .then(async (log) => {
           if (log) {
             const uiLog: UIRunLog = {
@@ -266,6 +279,7 @@ export default function Home() {
           onLine({ kind: "err", text: `ERROR: ${(e as Error).message}` });
           await loadTests(selectedId);
         });
+      return () => controller.abort();
     },
     [tests, selectedId, loadTests, loadHistory, loadIssues, settings]
   );
@@ -398,6 +412,14 @@ export default function Home() {
                 <FolderGit2 className="h-3.5 w-3.5 text-primary" />
                 <span className="font-mono text-foreground">{project.name}</span>
               </span>
+              <button onClick={() => setWebsitesOpen(true)} title="Add website"
+                className="inline-flex items-center gap-1.5 rounded-full border border-border bg-background px-3 py-1 text-xs font-medium transition hover:border-primary/50">
+                <Globe className="h-3.5 w-3.5 text-primary" /> <Plus className="h-3 w-3" /> Website
+              </button>
+              <button onClick={refreshAll} disabled={refreshing} title="Refresh projects, tests and history"
+                className="flex h-7 w-7 items-center justify-center rounded-full border border-border bg-background text-muted-foreground transition hover:text-foreground hover:border-primary/50 disabled:opacity-50">
+                <RefreshCw className={cn("h-3.5 w-3.5", refreshing && "animate-spin")} />
+              </button>
               <button onClick={toggleTheme} title="Toggle theme"
                 className="flex h-7 w-7 items-center justify-center rounded-full border border-border bg-background text-muted-foreground transition hover:text-foreground hover:border-primary/50">
                 {theme === "dark" ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
@@ -446,7 +468,7 @@ export default function Home() {
           existing={issues}
           onClose={() => setFailLog(null)}
           onConnect={() => { if (!gh?.authenticated) setLoginOpen(true); else setConnectOpen(true); }}
-          onCreated={(iss) => setIssues(iss)}
+          onCreated={(iss) => { setIssues(iss); loadChecklist(selectedId); }}
         />
       )}
       {connectOpen && selectedId && (
@@ -459,9 +481,9 @@ export default function Home() {
       )}
       {loginOpen && (
         <GitHubLoginModal
-          hasClientId={!!gh?.hasClientId}
-          onClose={() => setLoginOpen(false)}
-          onAuthed={(login) => { setLoginOpen(false); loadGh(); showToast(`Connected to GitHub as @${login}`); }}
+          hasClientId={!!gh?.hasClientId && !changeApp}
+          onClose={() => { setLoginOpen(false); setChangeApp(false); }}
+          onAuthed={(login) => { setLoginOpen(false); setChangeApp(false); loadGh(); showToast(`Connected to GitHub as @${login}`); }}
         />
       )}
       {rootModalOpen && <ChangeRootModal initial={root ?? ""} onClose={() => setRootModalOpen(false)} onSave={changeRoot} />}
@@ -470,10 +492,13 @@ export default function Home() {
           initial={settings}
           gh={gh}
           rootPath={root ?? ""}
+          projectName={project?.name ?? null}
           onChangeRoot={() => { setSettingsOpen(false); setRootModalOpen(true); }}
           onManageWebsites={() => { setSettingsOpen(false); setWebsitesOpen(true); }}
           onConnectGitHub={() => { setSettingsOpen(false); setLoginOpen(true); }}
+          onChangeApp={() => { setSettingsOpen(false); setChangeApp(true); setLoginOpen(true); }}
           onLogout={() => githubLogout().then(setGh)}
+          onClearIssues={() => clearIssues(selectedId).then((r) => setIssues(r.issues))}
           onClose={() => setSettingsOpen(false)}
           onSaved={(s) => { setSettings(s); setSettingsOpen(false); }}
         />
@@ -520,14 +545,15 @@ function ChangeRootModal({ initial, onClose, onSave }: { initial: string; onClos
 }
 
 // ---- Settings ----
-function SettingsModal({ initial, gh, rootPath, onChangeRoot, onManageWebsites, onConnectGitHub, onLogout, onClose, onSaved }: {
-  initial: AppSettings; gh: GitHubStatus | null; rootPath: string; onChangeRoot: () => void; onManageWebsites: () => void;
-  onConnectGitHub: () => void; onLogout: () => void;
+function SettingsModal({ initial, gh, rootPath, projectName, onChangeRoot, onManageWebsites, onConnectGitHub, onChangeApp, onLogout, onClearIssues, onClose, onSaved }: {
+  initial: AppSettings; gh: GitHubStatus | null; rootPath: string; projectName: string | null; onChangeRoot: () => void; onManageWebsites: () => void;
+  onConnectGitHub: () => void; onChangeApp: () => void; onLogout: () => void; onClearIssues: () => void;
   onClose: () => void; onSaved: (s: AppSettings) => void;
 }) {
   const [s, setS] = useState<AppSettings>(initial);
   const [busy, setBusy] = useState(false);
   const [confirmSignout, setConfirmSignout] = useState(false);
+  const [confirmClearIssues, setConfirmClearIssues] = useState(false);
   const input = "h-9 w-24 rounded-lg border border-border bg-background px-3 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-ring/30";
 
   async function save() {
@@ -592,6 +618,12 @@ function SettingsModal({ initial, gh, rootPath, onChangeRoot, onManageWebsites, 
             </>
           )}
         </div>
+        {gh?.hasClientId && (
+          <div className="mb-2 ml-1 mt-1 flex items-center gap-2 text-[11px] text-muted-foreground">
+            <span>OAuth app: <span className="font-mono text-foreground">{gh.clientId}</span></span>
+            <button onClick={onChangeApp} className="underline-offset-2 hover:text-foreground hover:underline">Change app</button>
+          </div>
+        )}
 
         {/* Workspace */}
         <div className="mt-2 flex items-center gap-3 rounded-xl border border-border bg-surface px-3 py-2.5">
@@ -610,6 +642,25 @@ function SettingsModal({ initial, gh, rootPath, onChangeRoot, onManageWebsites, 
           </div>
           <button onClick={onManageWebsites} className="rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium transition hover:border-primary/50">Manage</button>
         </div>
+
+        {projectName && (
+          <div className="mb-1 mt-2 flex items-center gap-3 rounded-xl border border-border bg-surface px-3 py-2.5">
+            <GitBranch className="h-5 w-5 shrink-0 text-primary" />
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-medium">Filed GitHub issues</div>
+              <div className="text-[11px] text-muted-foreground">Forgets which tests in <span className="font-mono">{projectName}</span> already have an issue - lets them all be re-filed</div>
+            </div>
+            {confirmClearIssues ? (
+              <div className="flex shrink-0 items-center gap-1.5">
+                <span className="text-[11px] text-muted-foreground">Sure?</span>
+                <button onClick={() => { onClearIssues(); setConfirmClearIssues(false); }} className="rounded-lg bg-destructive px-2.5 py-1.5 text-xs font-semibold text-white hover:opacity-90">Clear</button>
+                <button onClick={() => setConfirmClearIssues(false)} className="rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs font-medium hover:border-primary/50">No</button>
+              </div>
+            ) : (
+              <button onClick={() => setConfirmClearIssues(true)} className="rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium transition hover:border-destructive/40 hover:text-destructive">Clear</button>
+            )}
+          </div>
+        )}
 
         <Row title="Run headed by default" desc="Show the browser window when running tests">
           <Toggle on={s.defaultHeaded} onChange={(v) => setS({ ...s, defaultHeaded: v })} />

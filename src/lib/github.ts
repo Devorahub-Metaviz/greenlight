@@ -57,9 +57,9 @@ export async function getToken(): Promise<string | null> {
   return a.token ?? null;
 }
 
-export async function getStatus(): Promise<{ hasClientId: boolean; authenticated: boolean; login: string | null }> {
+export async function getStatus(): Promise<{ hasClientId: boolean; clientId: string | null; authenticated: boolean; login: string | null }> {
   const [clientId, a] = await Promise.all([getClientId(), readAuth()]);
-  return { hasClientId: !!clientId, authenticated: !!a.token, login: a.login ?? null };
+  return { hasClientId: !!clientId, clientId, authenticated: !!a.token, login: a.login ?? null };
 }
 
 export async function logout(): Promise<void> {

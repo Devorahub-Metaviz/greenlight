@@ -1,6 +1,6 @@
 "use client";
 import { useMemo, useState } from "react";
-import { Boxes, FlaskConical, GripVertical, Pencil, Plus, Trash2, X } from "lucide-react";
+import { Boxes, Check, FlaskConical, GripVertical, Pencil, Plus, Trash2, X } from "lucide-react";
 import type { ChecklistItem, Priority } from "@/lib/e2e-mock";
 import { PriorityTag } from "./StatusBadge";
 import { cn } from "@/lib/utils";
@@ -81,6 +81,8 @@ export function ChecklistTab({ items, onChange, moduleDescriptions = {}, onSetMo
 
   // ---- test ops ----
   const deleteTest = (id: string) => { onChange(items.filter((i) => i.id !== id)); setConfirmDel(null); };
+  const toggleStatus = (id: string) =>
+    onChange(items.map((i) => (i.id === id ? { ...i, status: i.status === "done" ? "todo" : "done" } : i)));
   const reorderTest = (module: string, target: string) => {
     if (!dragTest || dragTest.module !== module || dragTest.id === target) { setDragTest(null); setOverTest(null); return; }
     const mod = items.filter((i) => i.module === module);
@@ -140,8 +142,13 @@ export function ChecklistTab({ items, onChange, moduleDescriptions = {}, onSetMo
                           dragTest?.id === it.id && "opacity-50",
                           overTest === it.id && dragTest && overTest !== dragTest.id && "bg-accent/40 shadow-[inset_0_2px_0_0_var(--color-primary)]")}>
                         <span className="flex h-6 w-5 cursor-grab items-center justify-center text-muted-foreground/50 active:cursor-grabbing"><GripVertical className="h-4 w-4" /></span>
+                        <button onClick={() => toggleStatus(it.id)} title={it.status === "done" ? "Mark as todo" : "Mark as done"}
+                          className={cn("flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition",
+                            it.status === "done" ? "border-[var(--color-success)] bg-[var(--color-success)] text-white" : "border-border text-transparent hover:border-primary/50")}>
+                          <Check className="h-3.5 w-3.5" strokeWidth={3} />
+                        </button>
                         <span className="w-28 shrink-0 truncate font-mono text-xs font-semibold text-primary">{it.id}</span>
-                        <span className="flex-1 truncate text-sm text-foreground">{it.title || <span className="text-muted-foreground">(no title)</span>}</span>
+                        <span className={cn("flex-1 truncate text-sm", it.status === "done" ? "text-muted-foreground line-through" : "text-foreground")}>{it.title || <span className="text-muted-foreground">(no title)</span>}</span>
                         <PriorityTag priority={it.priority} />
                         <IconBtn onClick={() => setEditItem(it)} title="Edit"><Pencil className="h-3.5 w-3.5" /></IconBtn>
                         <IconBtn onClick={() => setConfirmDel({ type: "test", id: it.id })} title="Delete" tone="danger"><Trash2 className="h-3.5 w-3.5" /></IconBtn>
